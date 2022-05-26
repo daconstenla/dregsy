@@ -21,12 +21,14 @@ REPO = dregsy
 DREGSY_VERSION = $$(git describe --always --tag --dirty)
 
 ROOT = $(shell pwd)
-BUILD_OUTPUT =_build
+BUILD_OUTPUT=_build
 BINARIES = $(BUILD_OUTPUT)/bin
 ISOLATED_PKG = $(BUILD_OUTPUT)/pkg
 ISOLATED_CACHE = $(BUILD_OUTPUT)/cache
 
-GO_IMAGE = golang:1.18.2@sha256:a9d1f28367890615df70c45ba54ea69a8e95e202517e7114942c2f0449ce1de9
+GO_IMAGE_CLEAN = golang:1.18.2
+GO_IMAGE_HASH_AMD64 = @sha256:a9d1f28367890615df70c45ba54ea69a8e95e202517e7114942c2f0449ce1de9
+GO_IMAGE=$(GO_IMAGE_CLEAN)$(GO_IMAGE_HASH_AMD64)
 GOOS = $(shell uname -s | tr A-Z a-z)
 
 ## makerc
@@ -162,6 +164,18 @@ dregsy: prep
 			-ldflags \"-w -X main.DregsyVersion=$(DREGSY_VERSION)\" \
 			-o $(BINARIES)/dregsy ./cmd/dregsy/"
 
+.PHONY: dregsyarm
+dregsyarm: prep
+#	build the ${ITL}dregsy${NRM} binary
+#
+	docker run --rm --user $(shell id -u):$(shell id -g) \
+		-v $(shell pwd)/$(BINARIES):/go/bin $(CACHE_VOLS) \
+		-v $(shell pwd):/go/src/$(REPO) -w /go/src/$(REPO) \
+		-e CGO_ENABLED=0 -e GOOS=$(GOOS) -e GOARCH=arm64 \
+		$(GO_IMAGE_CLEAN) bash -c \
+			"go mod tidy && go build -v -tags netgo -installsuffix netgo \
+			-ldflags \"-w -X main.DregsyVersion=$(DREGSY_VERSION)\" \
+			-o $(BINARIES)/dregsy ./cmd/dregsy/"
 
 .PHONY: imgdregsy
 imgdregsy:
@@ -212,7 +226,7 @@ rmitest:
 
 
 .PHONY: tests
-tests: prep
+tests: prep dregsy imgdregsy
 #	run tests; assumes test images were built; local ${ITL}Docker${NRM} registry gets
 #	(re-)started on localhost:5000
 #
