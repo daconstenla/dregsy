@@ -81,6 +81,7 @@ func main() {
 
 	fs := flag.NewFlagSet("dregsy", flag.ContinueOnError)
 	configFile := fs.String("config", "", "path to config file")
+	dryRun := fs.Bool("dry-run", false, "perform a validation of the execution")
 
 	if testRound {
 		if len(testArgs) > 0 {
@@ -94,8 +95,11 @@ func main() {
 
 	if len(*configFile) == 0 {
 		version()
-		fmt.Println("synopsis: dregsy -config={config file}")
+		fmt.Println("synopsis: dregsy -config={config file} [--dry-run]")
 		exit(1)
+	}
+	if *dryRun {
+		fmt.Println("It's going to be a dry run, no real sync will happen")
 	}
 
 	version()
@@ -103,7 +107,7 @@ func main() {
 	conf, err := sync.LoadConfig(*configFile)
 	failOnError(err)
 
-	s, err := sync.New(conf)
+	s, err := sync.New(conf, *dryRun)
 	failOnError(err)
 
 	if testRound {

@@ -44,10 +44,11 @@ type Sync struct {
 	relay    Relay
 	shutdown chan bool
 	ticks    chan bool
+	dryRun   bool
 }
 
 //
-func New(conf *SyncConfig) (*Sync, error) {
+func New(conf *SyncConfig, dryRun bool) (*Sync, error) {
 
 	sync := &Sync{}
 
@@ -75,6 +76,7 @@ func New(conf *SyncConfig) (*Sync, error) {
 	sync.relay = relay
 	sync.shutdown = make(chan bool)
 	sync.ticks = make(chan bool, 1)
+	sync.dryRun = dryRun
 
 	return sync, nil
 }
@@ -186,10 +188,14 @@ func (s *Sync) syncTask(t *Task) {
 			t.fail(true)
 			continue
 		}
-		if err := t.Target.RefreshAuth(); err != nil {
-			log.Error(err)
-			t.fail(true)
-			continue
+		if s.dryRun {
+			log.Debug("No need to get auth on the target as is a dry run")
+		} else {
+			if err := t.Target.RefreshAuth(); err != nil {
+				log.Error(err)
+				t.fail(true)
+				continue
+			}
 		}
 
 		refs, err := t.mappingRefs(m)
@@ -208,6 +214,21 @@ func (s *Sync) syncTask(t *Task) {
 				log.Error(err)
 				t.fail(true)
 				break
+			}
+
+			tags, err := m.tagSet.Expand(func() ([]string, error) {
+				return skopeo.ListAllTags(
+					src, t.Source.GetAuth(), "", t.Source.SkipTLSVerify)
+			})
+			if err != nil {
+				log.Errorf("error expanding tags: %v", err)
+			}
+
+			if s.dryRun {
+				log.WithFields(log.Fields{
+					"task":   t.Name,
+					"tags": tags}).Info("list of tags")
+				continue
 			}
 
 			if err := s.relay.Sync(src, t.Source.GetAuth(), t.Source.SkipTLSVerify,
