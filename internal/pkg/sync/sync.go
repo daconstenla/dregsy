@@ -26,6 +26,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/xelalexv/dregsy/internal/pkg/relays"
+	"github.com/xelalexv/dregsy/internal/pkg/util"
 	"github.com/xelalexv/dregsy/internal/pkg/relays/docker"
 	"github.com/xelalexv/dregsy/internal/pkg/relays/skopeo"
 	"github.com/xelalexv/dregsy/internal/pkg/util"
@@ -43,10 +44,11 @@ type Sync struct {
 	relay    Relay
 	shutdown chan bool
 	ticks    chan bool
+	dryRun   bool
 }
 
 //
-func New(conf *SyncConfig) (*Sync, error) {
+func New(conf *SyncConfig, dryRun bool) (*Sync, error) {
 
 	sync := &Sync{}
 
@@ -78,6 +80,7 @@ func New(conf *SyncConfig) (*Sync, error) {
 	sync.relay = relay
 	sync.shutdown = make(chan bool)
 	sync.ticks = make(chan bool, 1)
+	sync.dryRun = dryRun
 
 	return sync, nil
 }
@@ -220,6 +223,35 @@ func (s *Sync) syncTask(t *Task) {
 				log.Error(err)
 				t.fail(true)
 				break
+			}
+
+			if s.dryRun {
+				log.Debugf("dry-run, obtaining information about [%s] docker tags from [%s] and [%s]", t.Name, src, trgt)
+				tags_source, err := m.tagSet.Expand(func() ([]string, error) {
+					return skopeo.ListAllTags(
+						src, t.Source.GetAuth(), "", t.Source.SkipTLSVerify)
+				})
+				if err != nil {
+					log.Errorf("dry-run, error expanding tags from source: %v", err)
+				}
+
+				tags_target, err := skopeo.ListAllTags(
+						trgt, t.Target.GetAuth(), "", t.Target.SkipTLSVerify)
+
+				if err != nil {
+					log.Errorf("dry-run, error expanding tags from target: %v", err)
+				}
+
+				log.WithFields(log.Fields{
+					"image name": t.Name,
+					"tags on target registry": tags_target,
+					"candidate tags be synced": tags_source,
+					"number of candidate tags be synced": len(tags_source),
+					"tags available but not synced": util.DiffBetweenLists(tags_target,tags_source),
+					"number of tags on target": len(tags_target),
+					"not synced tags": util.DiffBetweenLists(tags_source, tags_target),
+				}).Info("dry-run, list of tags")
+				continue
 			}
 
 			if err := s.relay.Sync(&relays.SyncOptions{
