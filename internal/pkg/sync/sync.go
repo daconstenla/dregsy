@@ -226,8 +226,9 @@ func (s *Sync) syncTask(t *Task) {
 
 			if s.dryRun {
 				log.WithFields(log.Fields{
-					"task":   t.Name,
-					"tags": tags}).Info("list of tags")
+					"image name": t.Name,
+					"list of tags": tags,
+					"number of images": len(tags)}).Info("list of tags")
 				continue
 			}
 
