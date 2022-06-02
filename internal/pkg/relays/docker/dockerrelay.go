@@ -52,12 +52,13 @@ func (s *Support) Platform(p string) error {
 //
 type DockerRelay struct {
 	client *dockerClient
+	dryRun bool
 }
 
 //
-func NewDockerRelay(conf *RelayConfig, out io.Writer) (*DockerRelay, error) {
+func NewDockerRelay(conf *RelayConfig, out io.Writer, dry bool) (*DockerRelay, error) {
 
-	relay := &DockerRelay{}
+	relay := &DockerRelay{dryRun: dry}
 
 	dockerHost := client.DefaultDockerHost
 	apiVersion := "1.41"
@@ -135,7 +136,10 @@ func (r *DockerRelay) Sync(opt *relays.SyncOptions) error {
 	}
 
 	if len(tags) == 0 {
-		if err = r.pull(opt.SrcRef, opt.Platform, opt.SrcAuth,
+		if r.dryRun {
+			// FIXME redact sensitive information before logging
+			log.Infof("pulling %s %s %s", opt.SrcRef, opt.Platform, opt.SrcAuth)
+		} else if err = r.pull(opt.SrcRef, opt.Platform, opt.SrcAuth,
 			true, opt.Verbose); err != nil {
 			return fmt.Errorf(
 				"error pulling source image '%s': %v", opt.SrcRef, err)
@@ -189,7 +193,10 @@ func (r *DockerRelay) Sync(opt *relays.SyncOptions) error {
 		"ref":      opt.TrgtRef,
 		"platform": opt.Platform}).Info("pushing target image")
 
-	if err := r.push(
+	if r.dryRun {
+		// FIXME redact sensitive information before logging
+		log.Infof("pulling %s %s %s", opt.SrcRef, opt.Platform, opt.SrcAuth)
+	} else if err := r.push(
 		opt.TrgtRef, opt.Platform, opt.TrgtAuth, opt.Verbose); err != nil {
 		return fmt.Errorf("error pushing target image: %v", err)
 	}

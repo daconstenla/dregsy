@@ -45,13 +45,14 @@ func (s *Support) Platform(p string) error {
 
 //
 type SkopeoRelay struct {
-	wrOut io.Writer
+	wrOut  io.Writer
+	dryRun bool
 }
 
 //
-func NewSkopeoRelay(conf *RelayConfig, out io.Writer) *SkopeoRelay {
+func NewSkopeoRelay(conf *RelayConfig, out io.Writer, dry bool) *SkopeoRelay {
 
-	relay := &SkopeoRelay{}
+	relay := &SkopeoRelay{dryRun: dry}
 
 	if out != nil {
 		relay.wrOut = out
@@ -151,7 +152,10 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 			rc = addPlatformOverrides(rc, opt.Platform)
 		}
 
-		if err := runSkopeo(r.wrOut, r.wrOut, opt.Verbose, rc...); err != nil {
+		if r.dryRun {
+			// FIXME redact sensitive information before logging
+			log.Infof("skopeo %v", rc)
+		} else if err := runSkopeo(r.wrOut, r.wrOut, opt.Verbose, rc...); err != nil {
 			log.Error(err)
 			errs = true
 		}

@@ -26,7 +26,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/xelalexv/dregsy/internal/pkg/relays"
-	"github.com/xelalexv/dregsy/internal/pkg/util"
 	"github.com/xelalexv/dregsy/internal/pkg/relays/docker"
 	"github.com/xelalexv/dregsy/internal/pkg/relays/skopeo"
 	"github.com/xelalexv/dregsy/internal/pkg/util"
@@ -60,13 +59,13 @@ func New(conf *SyncConfig, dryRun bool) (*Sync, error) {
 	case docker.RelayID:
 		if err = conf.ValidateSupport(&docker.Support{}); err == nil {
 			relay, err = docker.NewDockerRelay(
-				conf.Docker, log.StandardLogger().WriterLevel(log.DebugLevel))
+				conf.Docker, log.StandardLogger().WriterLevel(log.DebugLevel), dryRun)
 		}
 
 	case skopeo.RelayID:
 		if err = conf.ValidateSupport(&skopeo.Support{}); err == nil {
 			relay = skopeo.NewSkopeoRelay(
-				conf.Skopeo, log.StandardLogger().WriterLevel(log.DebugLevel))
+				conf.Skopeo, log.StandardLogger().WriterLevel(log.DebugLevel), dryRun)
 		}
 
 	default:
@@ -219,12 +218,38 @@ func (s *Sync) syncTask(t *Task) {
 			src := ref[0]
 			trgt := ref[1]
 
+			// FIXME dry-run should skip this as well, since this is a write op
 			if err := t.ensureTargetExists(trgt); err != nil {
 				log.Error(err)
 				t.fail(true)
 				break
 			}
 
+			/*
+				FIXME
+
+				- Push dry run handling into relays. The code for expanding source
+				  tag lists is already present there, and auth & TLS verify work
+				  correctly. This would additionally exercises all the mechanics
+				  involved, except the actual sync.
+
+				- Target tag lists could then be retrieved via a helper object.
+				  This could actually be set on the relay instead of just a dry
+				  run flag.
+
+				- When retrieving target tag list, we need to consider the case
+				  where the target repo does not yet exist. This is easy since
+				  all expanded source tags would then apply. We just need to
+				  handle it properly.
+
+				- Improve output, the dry-run log output seems a bit hard to
+				  read. Maybe we could create a JSON/YAML/diff file or whatever
+				  instead of writing to log. That could then also be processed
+				  with generic tools.
+
+				- Make all interval tasks one-off. We may not want the dry-run
+				  to run indefinitely.
+			*/
 			if s.dryRun {
 				log.Debugf("dry-run, obtaining information about [%s] docker tags from [%s] and [%s]", t.Name, src, trgt)
 				tags_source, err := m.tagSet.Expand(func() ([]string, error) {
@@ -236,20 +261,20 @@ func (s *Sync) syncTask(t *Task) {
 				}
 
 				tags_target, err := skopeo.ListAllTags(
-						trgt, t.Target.GetAuth(), "", t.Target.SkipTLSVerify)
+					trgt, t.Target.GetAuth(), "", t.Target.SkipTLSVerify)
 
 				if err != nil {
 					log.Errorf("dry-run, error expanding tags from target: %v", err)
 				}
 
 				log.WithFields(log.Fields{
-					"image name": t.Name,
-					"tags on target registry": tags_target,
-					"candidate tags be synced": tags_source,
+					"image name":                         t.Name,
+					"tags on target registry":            tags_target,
+					"candidate tags be synced":           tags_source,
 					"number of candidate tags be synced": len(tags_source),
-					"tags available but not synced": util.DiffBetweenLists(tags_target,tags_source),
-					"number of tags on target": len(tags_target),
-					"not synced tags": util.DiffBetweenLists(tags_source, tags_target),
+					"tags available but not synced":      util.DiffBetweenLists(tags_target, tags_source),
+					"number of tags on target":           len(tags_target),
+					"not synced tags":                    util.DiffBetweenLists(tags_source, tags_target),
 				}).Info("dry-run, list of tags")
 				continue
 			}
