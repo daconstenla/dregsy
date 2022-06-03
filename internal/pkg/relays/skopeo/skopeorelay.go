@@ -96,7 +96,7 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 
 	cmd := []string{
 		"--insecure-policy",
-		"copy",
+		"sync",
 	}
 
 	if opt.SrcSkipTLSVerify {
@@ -140,9 +140,7 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 		log.WithFields(
 			log.Fields{"tag": t, "platform": opt.Platform}).Info("syncing tag")
 
-		rc := append(cmd,
-			fmt.Sprintf("docker://%s:%s", opt.SrcRef, t),
-			fmt.Sprintf("docker://%s:%s", opt.TrgtRef, t))
+		var rc = cmd
 
 		switch opt.Platform {
 		case "":
@@ -153,9 +151,21 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 		}
 
 		if r.dryRun {
-			// FIXME redact sensitive information before logging
-			log.Infof("skopeo %v", rc)
-		} else if err := runSkopeo(r.wrOut, r.wrOut, opt.Verbose, rc...); err != nil {
+			// @TODO @daconstenla FIXME redact sensitive information before logging
+			rc = append(rc, "--dry-run")
+			log.Infof("skopeo will run with dry-run enabled")
+		}
+
+		// rc = append(rc,
+		// 	fmt.Sprintf("docker://%s:%s", opt.SrcRef, t),
+		// 	fmt.Sprintf("docker://%s:%s", opt.TrgtRef, t))
+		rc = append(rc,
+			"--src=docker",
+			"--dest=docker",
+			fmt.Sprintf("%s:%s", opt.SrcRef, t),
+			fmt.Sprintf("%s", opt.TrgtRef))
+
+		if err := runSkopeo(r.wrOut, r.wrOut, opt.Verbose, rc...); err != nil {
 			log.Error(err)
 			errs = true
 		}
