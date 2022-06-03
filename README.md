@@ -191,10 +191,12 @@ If you want to use *GCR* or artifact registry as the source for a public image, 
 ## Usage
 
 ```bash
-dregsy -config={path to config file} [-run={task name regexp}]
+dregsy -config={path to config file} [-run={task name regexp}] [--dry-run]
 ```
 
 If there are any periodic sync tasks defined (see *Configuration* above), *dregsy* remains running indefinitely. Otherwise, it will return once all one-off tasks have been processed. With the `-run` argument you can filter tasks. Only those tasks for which the task name matches the given regular expression will be run. Note that the regular expression performs a line match, so you don't need to place the expression in `^...$` to get an exact match. For example, `-run=task-a` will only select `task-a`, but not `task-abc`.
+
+If `--dry-run` is used no actions will be performed on the source and target registries but authenticate and obtain the list of docker image/tags available for the configured entries to be synced to show the actual differences between configuration,source and target registries / tags.
 
 ### Logging
 Logging behavior can be changed with these environment variables:

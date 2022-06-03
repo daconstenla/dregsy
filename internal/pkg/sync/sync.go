@@ -218,11 +218,12 @@ func (s *Sync) syncTask(t *Task) {
 			src := ref[0]
 			trgt := ref[1]
 
-			// FIXME dry-run should skip this as well, since this is a write op
-			if err := t.ensureTargetExists(trgt); err != nil {
-				log.Error(err)
-				t.fail(true)
-				break
+			if !s.dryRun {
+				if err := t.ensureTargetExists(trgt); err != nil {
+					log.Error(err)
+					t.fail(true)
+					break
+				}
 			}
 
 			/*
