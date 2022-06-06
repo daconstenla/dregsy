@@ -251,34 +251,6 @@ func (s *Sync) syncTask(t *Task) {
 				- Make all interval tasks one-off. We may not want the dry-run
 				  to run indefinitely.
 			*/
-			if s.dryRun {
-				log.Debugf("dry-run, obtaining information about [%s] docker tags from [%s] and [%s]", t.Name, src, trgt)
-				tags_source, err := m.tagSet.Expand(func() ([]string, error) {
-					return skopeo.ListAllTags(
-						src, t.Source.GetAuth(), "", t.Source.SkipTLSVerify)
-				})
-				if err != nil {
-					log.Errorf("dry-run, error expanding tags from source: %v", err)
-				}
-
-				tags_target, err := skopeo.ListAllTags(
-					trgt, t.Target.GetAuth(), "", t.Target.SkipTLSVerify)
-
-				if err != nil {
-					log.Errorf("dry-run, error expanding tags from target: %v", err)
-				}
-
-				log.WithFields(log.Fields{
-					"image name":                         t.Name,
-					"tags on target registry":            tags_target,
-					"candidate tags be synced":           tags_source,
-					"number of candidate tags be synced": len(tags_source),
-					"tags available but not synced":      util.DiffBetweenLists(tags_target, tags_source),
-					"number of tags on target":           len(tags_target),
-					"not synced tags":                    util.DiffBetweenLists(tags_source, tags_target),
-				}).Info("dry-run, list of tags")
-				continue
-			}
 
 			if err := s.relay.Sync(&relays.SyncOptions{
 				SrcRef:            src,

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -96,7 +97,7 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 
 	cmd := []string{
 		"--insecure-policy",
-		"sync",
+		"copy",
 	}
 
 	if opt.SrcSkipTLSVerify {
@@ -135,12 +136,46 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 
 	errs := false
 
+	if r.dryRun {
+		desCertDir := ""
+		repo, _, _ := util.SplitRef(opt.TrgtRef)
+		if repo != "" {
+			desCertDir = CertsDirForRepo(repo)
+		}
+		tags_target, err := ListAllTags(
+			opt.TrgtRef, destCreds, desCertDir, opt.TrgtSkipTLSVerify)
+
+		if err != nil {
+			// Not so sure parsing the error is the best solution but
+			// alt could be pre-check with an http request to `/v2/_catalog`
+			// and check if the repository is in the list
+			if strings.Contains(err.Error(), "registry 404 (Not Found)") {
+				log.Warnf("Repository not found. setting the target list as empty list.")
+				tags_target = []string{}
+			} else {
+				log.Errorf("dry-run, unknonw expanding tags from target: %v", err)
+			}
+		}
+		log.WithFields(log.Fields{
+			"image name":                         opt.SrcRef,
+			"tags on target registry":            tags,
+			"tags available on target":           tags_target,
+			"number of candidate tags be synced": len(tags),
+			"tags available but not synced":      util.DiffBetweenLists(tags, tags_target),
+			"number of tags on target":           len(tags_target),
+			"not synced tags":                    util.DiffBetweenLists(tags_target, tags),
+		}).Info("dry-run, list of tags")
+		return nil
+	}
+
 	for _, t := range tags {
 
 		log.WithFields(
 			log.Fields{"tag": t, "platform": opt.Platform}).Info("syncing tag")
 
-		var rc = cmd
+		rc := append(cmd,
+			fmt.Sprintf("docker://%s:%s", opt.SrcRef, t),
+			fmt.Sprintf("docker://%s:%s", opt.TrgtRef, t))
 
 		switch opt.Platform {
 		case "":
@@ -149,21 +184,6 @@ func (r *SkopeoRelay) Sync(opt *relays.SyncOptions) error {
 		default:
 			rc = addPlatformOverrides(rc, opt.Platform)
 		}
-
-		if r.dryRun {
-			// @TODO @daconstenla FIXME redact sensitive information before logging
-			rc = append(rc, "--dry-run")
-			log.Infof("skopeo will run with dry-run enabled")
-		}
-
-		// rc = append(rc,
-		// 	fmt.Sprintf("docker://%s:%s", opt.SrcRef, t),
-		// 	fmt.Sprintf("docker://%s:%s", opt.TrgtRef, t))
-		rc = append(rc,
-			"--src=docker",
-			"--dest=docker",
-			fmt.Sprintf("%s:%s", opt.SrcRef, t),
-			fmt.Sprintf("%s", opt.TrgtRef))
 
 		if err := runSkopeo(r.wrOut, r.wrOut, opt.Verbose, rc...); err != nil {
 			log.Error(err)

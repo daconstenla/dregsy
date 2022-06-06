@@ -25,7 +25,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/xelalexv/dregsy/internal/pkg/relays"
-	"github.com/xelalexv/dregsy/internal/pkg/relays/skopeo"
 	"github.com/xelalexv/dregsy/internal/pkg/util"
 )
 
@@ -119,15 +118,15 @@ func (r *DockerRelay) Sync(opt *relays.SyncOptions) error {
 	// When no tags are specified, a simple docker pull without a tag will get
 	// all tags. So for Docker relay, we don't need to list tags in this case.
 	if !opt.Tags.IsEmpty() {
-		srcCertDir := ""
+		// srcCertDir := ""
 		repo, _, _ := util.SplitRef(opt.SrcRef)
-		if repo != "" {
-			srcCertDir = skopeo.CertsDirForRepo(repo)
-		}
+		// if repo != "" {
+		// 	// srcCertDir = skopeo.CertsDirForRepo(repo)
+		// }
+		log.Warnf("the registry is %s", repo)
 		tags, err = opt.Tags.Expand(func() ([]string, error) {
-			return skopeo.ListAllTags(
-				opt.SrcRef, util.DecodeJSONAuth(opt.SrcAuth),
-				srcCertDir, opt.SrcSkipTLSVerify)
+			// return r.list(opt.SrcRef)
+			return []string{}, nil
 		})
 
 		if err != nil {
@@ -135,11 +134,22 @@ func (r *DockerRelay) Sync(opt *relays.SyncOptions) error {
 		}
 	}
 
+	var trgtImages []string
+
+	if r.dryRun {
+		// FIXME redact sensitive information before logging
+		trgtImages, err = r.listTags(opt.TrgtRef)
+		if err != nil {
+			log.Errorf("error listing all tags of source image '%s': %v => %v",
+				opt.SrcRef, err, trgtImages)
+		}
+		log.Infof("dry-run execution, will not pull %s %s", opt.SrcRef, opt.Platform)
+
+		return nil
+	}
+
 	if len(tags) == 0 {
-		if r.dryRun {
-			// FIXME redact sensitive information before logging
-			log.Infof("pulling %s %s %s", opt.SrcRef, opt.Platform, opt.SrcAuth)
-		} else if err = r.pull(opt.SrcRef, opt.Platform, opt.SrcAuth,
+		if err = r.pull(opt.SrcRef, opt.Platform, opt.SrcAuth,
 			true, opt.Verbose); err != nil {
 			return fmt.Errorf(
 				"error pulling source image '%s': %v", opt.SrcRef, err)
@@ -193,10 +203,7 @@ func (r *DockerRelay) Sync(opt *relays.SyncOptions) error {
 		"ref":      opt.TrgtRef,
 		"platform": opt.Platform}).Info("pushing target image")
 
-	if r.dryRun {
-		// FIXME redact sensitive information before logging
-		log.Infof("pulling %s %s %s", opt.SrcRef, opt.Platform, opt.SrcAuth)
-	} else if err := r.push(
+	if err := r.push(
 		opt.TrgtRef, opt.Platform, opt.TrgtAuth, opt.Verbose); err != nil {
 		return fmt.Errorf("error pushing target image: %v", err)
 	}
@@ -211,7 +218,28 @@ func (r *DockerRelay) pull(ref, platform, auth string, allTags, verbose bool) er
 
 //
 func (r *DockerRelay) list(ref string) ([]*image, error) {
+	var img []*image
+	var err error
+
+	img, err = r.client.listImages(ref)
+	if err != nil {
+		log.Warnf("Something went wrong :(%v)", err)
+	}
+	log.Debugf("Obtained %v", img)
 	return r.client.listImages(ref)
+}
+
+//
+func (r *DockerRelay) listTags(ref string) ([]string, error) {
+	var img []*image
+	var err error
+
+	img, err = r.client.listImages(ref)
+	if err != nil {
+		log.Warnf("Something went wrong :(%v)", err)
+	}
+	log.Debugf("Obtained %v", img)
+	return img[0].Tags, nil
 }
 
 //
